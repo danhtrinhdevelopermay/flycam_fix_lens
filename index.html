@@ -2,246 +2,244 @@
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<title>Lens Distortion Fix PRO</title>
+<title>Lens Distortion Fix Tool</title>
 <style>
-body{font-family:sans-serif;background:#111;color:#fff;text-align:center}
-canvas{max-width:95vw;border:1px solid #444;margin-top:10px}
-.controls{max-width:900px;margin:auto;text-align:left}
-.row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
-input[type=range]{flex:1}
-input[type=number]{width:90px}
-button{padding:6px 10px;background:#333;color:#fff;border:0;border-radius:6px}
-.progress{width:100%;height:10px;background:#333;margin-top:10px;border-radius:6px;overflow:hidden}
-.bar{height:100%;width:0;background:#0f0}
+body {font-family:sans-serif;background:#111;color:#eee;text-align:center}
+canvas,video{max-width:95%;margin-top:10px;border-radius:10px}
+.controls{margin:10px}
+input[type=range]{width:300px}
+button{padding:8px 16px;margin:5px;border-radius:8px;border:none;background:#0af;color:#000;font-weight:bold}
+.progress{width:300px;height:20px;background:#333;margin:10px auto;border-radius:10px;overflow:hidden}
+.progress-bar{height:100%;width:0;background:#0f0}
 </style>
 </head>
 <body>
 
-<h2>Lens Distortion Fix PRO</h2>
-<input type="file" id="upload" accept="image/*,video/*"><br>
-<div>FPS gốc: <span id="fps">...</span></div>
+<h2>Lens Distortion Fix (30 FPS thật)</h2>
 
-<video id="video" style="display:none" muted playsinline></video>
+<input type="file" id="fileInput" accept="image/*,video/*"><br>
+
+<video id="video" controls muted></video>
 <canvas id="canvas"></canvas>
 
 <div class="controls">
-
-<label>Distortion</label>
-<div class="row">
-<button onclick="step('distortion',-0.001)">-</button>
-<input type="range" id="distortion" min="-1" max="1" step="0.0001">
-<button onclick="step('distortion',0.001)">+</button>
-<input type="number" id="distortionNum" step="0.0001">
+K1: <input type="range" id="k1" min="-1" max="1" step="0.001"><span id="k1v"></span><br>
+K2: <input type="range" id="k2" min="-1" max="1" step="0.001"><span id="k2v"></span><br>
+Scale: <input type="range" id="scale" min="0.5" max="1.5" step="0.001"><span id="scalev"></span><br>
+<button onclick="saveSettings()">Lưu thông số</button>
+<button onclick="loadSettings()">Load thông số</button>
+<button onclick="exportVideo()">Export Video 30FPS</button>
 </div>
 
-<label>Zoom</label>
-<div class="row">
-<button onclick="step('zoom',-0.001)">-</button>
-<input type="range" id="zoom" min="1" max="2" step="0.0001">
-<button onclick="step('zoom',0.001)">+</button>
-<input type="number" id="zoomNum" step="0.0001">
-</div>
-
-<button onclick="savePreset()">💾 Lưu preset</button>
-<button onclick="loadPreset()">📂 Load preset</button>
-<button onclick="exportImage()">📸 Export ảnh</button>
-<button onclick="exportVideo()">🎬 Export video</button>
-
-<div class="progress"><div class="bar" id="bar"></div></div>
-
-</div>
+<div class="progress"><div class="progress-bar" id="bar"></div></div>
+<div id="status"></div>
 
 <script>
-const canvas=document.getElementById("canvas");
-const ctx=canvas.getContext("2d");
-const video=document.getElementById("video");
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
 
-const distortionSlider=document.getElementById("distortion");
-const zoomSlider=document.getElementById("zoom");
-const distortionNum=document.getElementById("distortionNum");
-const zoomNum=document.getElementById("zoomNum");
-const bar=document.getElementById("bar");
+const k1 = document.getElementById('k1');
+const k2 = document.getElementById('k2');
+const scale = document.getElementById('scale');
 
-let distortion=-0.28;
-let zoom=1.12;
-let isVideo=false;
-let sourceImage=null;
-let originalFPS=30;
+const k1v = document.getElementById('k1v');
+const k2v = document.getElementById('k2v');
+const scalev = document.getElementById('scalev');
 
-function sync(){
-distortionSlider.value=distortion;
-zoomSlider.value=zoom;
-distortionNum.value=distortion.toFixed(4);
-zoomNum.value=zoom.toFixed(4);
+const bar = document.getElementById('bar');
+const statusText = document.getElementById('status');
+
+let isVideo = false;
+let sourceImage = null;
+
+function updateLabels(){
+k1v.textContent = k1.value;
+k2v.textContent = k2.value;
+scalev.textContent = scale.value;
 }
-sync();
+[k1,k2,scale].forEach(e=>e.oninput=updateLabels);
+updateLabels();
 
-function step(type,val){
-if(type==="distortion") distortion=+(distortion+val).toFixed(4);
-else zoom=+(zoom+val).toFixed(4);
-sync(); draw();
+function saveSettings(){
+localStorage.setItem('lensSettings', JSON.stringify({
+k1:k1.value, k2:k2.value, scale:scale.value
+}));
+alert("Đã lưu");
 }
-
-distortionSlider.oninput=()=>{distortion=parseFloat(distortionSlider.value);sync();draw();}
-zoomSlider.oninput=()=>{zoom=parseFloat(zoomSlider.value);sync();draw();}
-distortionNum.onchange=()=>{distortion=parseFloat(distortionNum.value);sync();draw();}
-zoomNum.onchange=()=>{zoom=parseFloat(zoomNum.value);sync();draw();}
-
-function savePreset(){
-localStorage.setItem("lensPreset",JSON.stringify({distortion,zoom}));
-}
-function loadPreset(){
-let p=JSON.parse(localStorage.getItem("lensPreset"));
-if(p){distortion=p.distortion;zoom=p.zoom;sync();draw();}
+function loadSettings(){
+const s = JSON.parse(localStorage.getItem('lensSettings'));
+if(!s)return;
+k1.value=s.k1; k2.value=s.k2; scale.value=s.scale;
+updateLabels();
 }
 
-function getVideoFPS(video){
-let stream = video.captureStream();
-let track = stream.getVideoTracks()[0];
-let fps = track.getSettings().frameRate;
-if(!fps || fps < 20) fps = 30;
-return Math.round(fps);
-}
+document.getElementById('fileInput').onchange = e=>{
+const file = e.target.files[0];
+if(!file)return;
 
-document.getElementById("upload").onchange=e=>{
-let file=e.target.files[0];
-if(!file) return;
-
-isVideo=file.type.startsWith("video");
-let url=URL.createObjectURL(file);
+isVideo = file.type.startsWith('video');
 
 if(isVideo){
-video.src=url;
-video.onloadedmetadata=()=>{
-canvas.width=video.videoWidth;
-canvas.height=video.videoHeight;
-
-originalFPS = getVideoFPS(video);
-document.getElementById("fps").innerText=originalFPS;
-
+video.src = URL.createObjectURL(file);
+video.onloadedmetadata = ()=>{
+canvas.width = video.videoWidth;
+canvas.height = video.videoHeight;
 video.play();
-requestAnimationFrame(drawVideo);
+renderPreview();
 };
 }else{
-let img=new Image();
-img.onload=()=>{
-canvas.width=img.width;
-canvas.height=img.height;
-sourceImage=img;
-draw();
+const img = new Image();
+img.onload = ()=>{
+canvas.width = img.width;
+canvas.height = img.height;
+sourceImage = img;
+renderImage();
 };
-img.src=url;
+img.src = URL.createObjectURL(file);
 }
 };
 
-function draw(){
-if(isVideo||!sourceImage) return;
-drawFrame(sourceImage);
+function distortPixel(x,y,w,h){
+let nx = (x - w/2) / (w/2);
+let ny = (y - h/2) / (h/2);
+let r2 = nx*nx + ny*ny;
+
+let factor = 1 + k1.value*r2 + k2.value*r2*r2;
+nx *= factor * scale.value;
+ny *= factor * scale.value;
+
+let sx = nx*(w/2) + w/2;
+let sy = ny*(h/2) + h/2;
+return [sx, sy];
 }
 
-function drawVideo(){
-if(!video.paused && !video.ended){
-drawFrame(video);
-requestAnimationFrame(drawVideo);
-}
-}
+function renderImage(){
+const w = canvas.width;
+const h = canvas.height;
+ctx.drawImage(sourceImage,0,0);
 
-function drawFrame(source){
-let w=canvas.width;
-let h=canvas.height;
-let cx=w/2;
-let cy=h/2;
-
-let temp=document.createElement("canvas");
-temp.width=w;
-temp.height=h;
-let tctx=temp.getContext("2d");
-tctx.drawImage(source,0,0,w,h);
-
-let imgData=tctx.getImageData(0,0,w,h);
-let dst=ctx.createImageData(w,h);
+const src = ctx.getImageData(0,0,w,h);
+const dst = ctx.createImageData(w,h);
 
 for(let y=0;y<h;y++){
 for(let x=0;x<w;x++){
-let nx=(x-cx)/cx;
-let ny=(y-cy)/cy;
-let r=Math.sqrt(nx*nx+ny*ny);
-let factor=1+distortion*r*r;
+let [sx,sy]=distortPixel(x,y,w,h);
+sx = Math.floor(sx);
+sy = Math.floor(sy);
 
-let srcX=Math.round(cx+nx*factor*cx/zoom);
-let srcY=Math.round(cy+ny*factor*cy/zoom);
+if(sx>=0 && sy>=0 && sx<w && sy<h){
+let si = (sy*w+sx)*4;
+let di = (y*w+x)*4;
+dst.data[di]=src.data[si];
+dst.data[di+1]=src.data[si+1];
+dst.data[di+2]=src.data[si+2];
+dst.data[di+3]=255;
+}
+}
+}
+ctx.putImageData(dst,0,0);
+}
 
-if(srcX>=0&&srcX<w&&srcY>=0&&srcY<h){
-let si=(srcY*w+srcX)*4;
-let di=(y*w+x)*4;
-dst.data[di]=imgData.data[si];
-dst.data[di+1]=imgData.data[si+1];
-dst.data[di+2]=imgData.data[si+2];
+function renderPreview(){
+if(!isVideo)return;
+
+ctx.drawImage(video,0,0);
+const src = ctx.getImageData(0,0,canvas.width,canvas.height);
+const dst = ctx.createImageData(canvas.width,canvas.height);
+
+for(let y=0;y<canvas.height;y++){
+for(let x=0;x<canvas.width;x++){
+let [sx,sy]=distortPixel(x,y,canvas.width,canvas.height);
+sx=Math.floor(sx); sy=Math.floor(sy);
+
+if(sx>=0 && sy>=0 && sx<canvas.width && sy<canvas.height){
+let si=(sy*canvas.width+sx)*4;
+let di=(y*canvas.width+x)*4;
+dst.data[di]=src.data[si];
+dst.data[di+1]=src.data[si+1];
+dst.data[di+2]=src.data[si+2];
+dst.data[di+3]=255;
+}
+}
+}
+ctx.putImageData(dst,0,0);
+
+requestVideoFrameCallback(renderPreview);
+}
+
+async function exportVideo(){
+if(!isVideo)return;
+
+const fps = 30;
+statusText.textContent = "Đang export 30 FPS thật...";
+bar.style.width="0%";
+
+video.pause();
+video.currentTime = 0;
+
+const stream = canvas.captureStream(fps);
+const recorder = new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9'});
+
+let chunks=[];
+recorder.ondataavailable=e=>chunks.push(e.data);
+
+recorder.onstop=()=>{
+const blob=new Blob(chunks,{type:'video/webm'});
+const a=document.createElement('a');
+a.href=URL.createObjectURL(blob);
+a.download='fixed_video.webm';
+a.click();
+statusText.textContent="Export xong";
+};
+
+recorder.start();
+
+let duration = video.duration;
+let frameTime = 1/fps;
+let currentTime = 0;
+
+function processFrame(){
+if(currentTime > duration){
+recorder.stop();
+return;
+}
+
+video.currentTime = currentTime;
+
+video.onseeked = ()=>{
+ctx.drawImage(video,0,0);
+
+const src = ctx.getImageData(0,0,canvas.width,canvas.height);
+const dst = ctx.createImageData(canvas.width,canvas.height);
+
+for(let y=0;y<canvas.height;y++){
+for(let x=0;x<canvas.width;x++){
+let [sx,sy]=distortPixel(x,y,canvas.width,canvas.height);
+sx=Math.floor(sx); sy=Math.floor(sy);
+
+if(sx>=0 && sy>=0 && sx<canvas.width && sy<canvas.height){
+let si=(sy*canvas.width+sx)*4;
+let di=(y*canvas.width+x)*4;
+dst.data[di]=src.data[si];
+dst.data[di+1]=src.data[si+1];
+dst.data[di+2]=src.data[si+2];
 dst.data[di+3]=255;
 }
 }
 }
 
 ctx.putImageData(dst,0,0);
-}
 
-function exportImage(){
-let link=document.createElement("a");
-link.download="fixed.png";
-link.href=canvas.toDataURL();
-link.click();
-}
+currentTime += frameTime;
 
-async function exportVideo(){
-if(!isVideo) return;
+bar.style.width = Math.min(100,(currentTime/duration)*100) + "%";
 
-bar.style.width="0%";
-
-const stream = canvas.captureStream(originalFPS);
-
-const recorder=new MediaRecorder(stream,{
-mimeType:"video/webm;codecs=vp9",
-videoBitsPerSecond:20000000
-});
-
-let chunks=[];
-recorder.ondataavailable=e=>{
-if(e.data.size) chunks.push(e.data);
+setTimeout(processFrame,0);
 };
-
-recorder.onstop=()=>{
-let blob=new Blob(chunks,{type:"video/webm"});
-let url=URL.createObjectURL(blob);
-let a=document.createElement("a");
-a.href=url;
-a.download="fixed_video.webm";
-a.click();
-bar.style.width="100%";
-};
-
-video.pause();
-video.currentTime=0;
-
-await video.play();
-recorder.start();
-
-function render(){
-if(video.paused || video.ended){
-recorder.stop();
-return;
 }
-
-drawFrame(video);
-
-let percent=(video.currentTime/video.duration)*100;
-bar.style.width=percent+"%";
-
-requestAnimationFrame(render);
-}
-
-requestAnimationFrame(render);
+processFrame();
 }
 </script>
-
 </body>
 </html>
