@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<title>Lens Distortion Fix</title>
+<title>Lens Distortion Fix PRO</title>
 <style>
 body{font-family:sans-serif;background:#111;color:#fff;text-align:center}
 canvas{max-width:95vw;border:1px solid #444;margin-top:10px}
@@ -17,10 +17,10 @@ button{padding:6px 10px;background:#333;color:#fff;border:0;border-radius:6px}
 </head>
 <body>
 
-<h2>Lens Distortion Fix</h2>
+<h2>Lens Distortion Fix PRO</h2>
 <input type="file" id="upload" accept="image/*,video/*"><br>
 
-<video id="video" style="display:none"></video>
+<video id="video" style="display:none" muted playsinline></video>
 <canvas id="canvas"></canvas>
 
 <div class="controls">
@@ -65,6 +65,7 @@ let distortion=-0.28;
 let zoom=1.12;
 let isVideo=false;
 let originalFPS=30;
+let sourceImage=null;
 
 function sync(){
 distortionSlider.value=distortion;
@@ -72,7 +73,6 @@ zoomSlider.value=zoom;
 distortionNum.value=distortion.toFixed(4);
 zoomNum.value=zoom.toFixed(4);
 }
-
 sync();
 
 function step(type,val){
@@ -138,22 +138,23 @@ let img=new Image();
 img.onload=()=>{
 canvas.width=img.width;
 canvas.height=img.height;
-ctx.drawImage(img,0,0);
+sourceImage=img;
+draw();
 };
 img.src=url;
 }
 };
 
 function draw(){
-if(isVideo) return;
-let img=new Image();
-img.src=canvas.toDataURL();
-img.onload=()=>drawFrame(img);
+if(isVideo||!sourceImage) return;
+drawFrame(sourceImage);
 }
 
 function drawVideo(){
+if(!video.paused && !video.ended){
 drawFrame(video);
 requestAnimationFrame(drawVideo);
+}
 }
 
 function drawFrame(source){
@@ -214,13 +215,16 @@ if(!isVideo) return;
 bar.style.width="0%";
 
 const stream=canvas.captureStream(originalFPS);
+
 const recorder=new MediaRecorder(stream,{
 mimeType:"video/webm;codecs=vp9",
 videoBitsPerSecond:20000000
 });
 
 let chunks=[];
-recorder.ondataavailable=e=>{if(e.data.size) chunks.push(e.data);};
+recorder.ondataavailable=e=>{
+if(e.data.size) chunks.push(e.data);
+};
 
 recorder.onstop=()=>{
 let blob=new Blob(chunks,{type:"video/webm"});
@@ -232,28 +236,27 @@ a.click();
 bar.style.width="100%";
 };
 
+video.pause();
+video.currentTime=0;
+await video.play();
+
 recorder.start();
 
-video.currentTime=0;
-let duration=video.duration;
-
-function process(){
-if(video.currentTime>=duration){
+function render(){
+if(video.paused || video.ended){
 recorder.stop();
 return;
 }
 
 drawFrame(video);
 
-let percent=(video.currentTime/duration)*100;
+let percent=(video.currentTime/video.duration)*100;
 bar.style.width=percent+"%";
 
-video.currentTime+=1/originalFPS;
-
-setTimeout(process,0);
+requestAnimationFrame(render);
 }
 
-process();
+requestAnimationFrame(render);
 }
 </script>
 
