@@ -19,6 +19,7 @@ button{padding:6px 10px;background:#333;color:#fff;border:0;border-radius:6px}
 
 <h2>Lens Distortion Fix PRO</h2>
 <input type="file" id="upload" accept="image/*,video/*"><br>
+<div>FPS gốc: <span id="fps">...</span></div>
 
 <video id="video" style="display:none" muted playsinline></video>
 <canvas id="canvas"></canvas>
@@ -64,8 +65,8 @@ const bar=document.getElementById("bar");
 let distortion=-0.28;
 let zoom=1.12;
 let isVideo=false;
-let originalFPS=30;
 let sourceImage=null;
+let originalFPS=30;
 
 function sync(){
 distortionSlider.value=distortion;
@@ -113,22 +114,51 @@ let p=JSON.parse(localStorage.getItem("lensPreset"));
 if(p){distortion=p.distortion;zoom=p.zoom;sync();draw();}
 }
 
+async function detectRealFPS(video, sampleFrames=60){
+return new Promise(resolve=>{
+let times=[];
+let count=0;
+
+function step(now,meta){
+times.push(meta.mediaTime);
+count++;
+
+if(count<sampleFrames){
+video.requestVideoFrameCallback(step);
+}else{
+let diffs=[];
+for(let i=1;i<times.length;i++){
+diffs.push(times[i]-times[i-1]);
+}
+let avg=diffs.reduce((a,b)=>a+b)/diffs.length;
+let fps=Math.round(1/avg);
+resolve(fps);
+}
+}
+
+video.requestVideoFrameCallback(step);
+});
+}
+
 document.getElementById("upload").onchange=e=>{
 let file=e.target.files[0];
 if(!file) return;
 
 isVideo=file.type.startsWith("video");
-
 let url=URL.createObjectURL(file);
 
 if(isVideo){
 video.src=url;
-video.onloadedmetadata=()=>{
+video.onloadedmetadata=async ()=>{
 canvas.width=video.videoWidth;
 canvas.height=video.videoHeight;
 
-let track=video.captureStream().getVideoTracks()[0];
-originalFPS=track.getSettings().frameRate||30;
+await video.play();
+originalFPS=await detectRealFPS(video);
+document.getElementById("fps").innerText=originalFPS;
+
+video.pause();
+video.currentTime=0;
 
 video.play();
 requestAnimationFrame(drawVideo);
