@@ -2,37 +2,28 @@
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<title>Lens Distortion Fix Tool</title>
+<title>Lens Fix Preview OK</title>
 <style>
 body{font-family:sans-serif;background:#111;color:#eee;text-align:center}
-canvas,video{max-width:95%;margin-top:10px;border-radius:10px}
-.controls{margin:10px}
+canvas{max-width:95%;margin-top:10px;border-radius:10px}
+button{padding:10px 18px;margin:6px;border-radius:8px;border:none;background:#0af;color:#000;font-weight:bold}
 input[type=range]{width:300px}
-button{padding:8px 16px;margin:5px;border-radius:8px;border:none;background:#0af;color:#000;font-weight:bold}
-.progress{width:300px;height:20px;background:#333;margin:10px auto;border-radius:10px;overflow:hidden}
-.progress-bar{height:100%;width:0;background:#0f0}
 </style>
 </head>
 <body>
 
-<h2>Lens Distortion Fix (Preview OK + Export 30FPS)</h2>
+<h3>Lens Distortion Fix – Preview OK</h3>
 
-<input type="file" id="fileInput" accept="image/*,video/*"><br>
+<input type="file" id="fileInput" accept="video/*,image/*"><br>
+<button id="startBtn" disabled>Bắt đầu preview</button>
 
 <video id="video" muted playsinline style="display:none"></video>
 <canvas id="canvas"></canvas>
 
-<div class="controls">
-K1: <input type="range" id="k1" min="-1" max="1" step="0.001"><span id="k1v"></span><br>
-K2: <input type="range" id="k2" min="-1" max="1" step="0.001"><span id="k2v"></span><br>
-Scale: <input type="range" id="scale" min="0.5" max="1.5" step="0.001"><span id="scalev"></span><br>
-<button onclick="saveSettings()">Lưu thông số</button>
-<button onclick="loadSettings()">Load thông số</button>
-<button onclick="exportVideo()">Export Video 30FPS</button>
-</div>
-
-<div class="progress"><div class="progress-bar" id="bar"></div></div>
-<div id="status"></div>
+<br>
+K1 <input type="range" id="k1" min="-1" max="1" step="0.001" value="0">
+K2 <input type="range" id="k2" min="-1" max="1" step="0.001" value="0">
+Scale <input type="range" id="scale" min="0.5" max="1.5" step="0.001" value="1">
 
 <script>
 const video = document.getElementById('video');
@@ -43,68 +34,42 @@ const k1 = document.getElementById('k1');
 const k2 = document.getElementById('k2');
 const scale = document.getElementById('scale');
 
-const k1v = document.getElementById('k1v');
-const k2v = document.getElementById('k2v');
-const scalev = document.getElementById('scalev');
-
-const bar = document.getElementById('bar');
-const statusText = document.getElementById('status');
+const startBtn = document.getElementById('startBtn');
 
 let isVideo = false;
-let sourceImage = null;
 let previewRunning = false;
 
-function updateLabels(){
-k1v.textContent=k1.value;
-k2v.textContent=k2.value;
-scalev.textContent=scale.value;
-}
-[k1,k2,scale].forEach(e=>e.oninput=updateLabels);
-updateLabels();
-
-function saveSettings(){
-localStorage.setItem('lensSettings',JSON.stringify({
-k1:k1.value,k2:k2.value,scale:scale.value
-}));
-alert("Đã lưu");
-}
-function loadSettings(){
-const s=JSON.parse(localStorage.getItem('lensSettings'));
-if(!s)return;
-k1.value=s.k1;k2.value=s.k2;scale.value=s.scale;
-updateLabels();
-}
-
-document.getElementById('fileInput').onchange=e=>{
-const file=e.target.files[0];
+document.getElementById('fileInput').onchange = e=>{
+const file = e.target.files[0];
 if(!file)return;
 
-isVideo=file.type.startsWith('video');
+isVideo = file.type.startsWith('video');
 
 if(isVideo){
-video.src=URL.createObjectURL(file);
+video.src = URL.createObjectURL(file);
 video.load();
 
-video.onloadedmetadata=()=>{
-canvas.width=video.videoWidth;
-canvas.height=video.videoHeight;
-
-video.currentTime=0;
-video.play();
-
-previewRunning=true;
-previewLoop();
+video.onloadeddata = ()=>{
+canvas.width = video.videoWidth;
+canvas.height = video.videoHeight;
+startBtn.disabled = false;
 };
 }else{
-const img=new Image();
-img.onload=()=>{
-canvas.width=img.width;
-canvas.height=img.height;
-sourceImage=img;
-renderImage();
+const img = new Image();
+img.onload = ()=>{
+canvas.width = img.width;
+canvas.height = img.height;
+ctx.drawImage(img,0,0);
 };
-img.src=URL.createObjectURL(file);
+img.src = URL.createObjectURL(file);
 }
+};
+
+startBtn.onclick = ()=>{
+video.currentTime = 0;
+video.play();
+previewRunning = true;
+previewLoop();
 };
 
 function distortPixel(x,y,w,h){
@@ -119,13 +84,15 @@ return [nx*(w/2)+w/2,ny*(h/2)+h/2];
 
 function renderFrame(){
 ctx.drawImage(video,0,0);
-const src=ctx.getImageData(0,0,canvas.width,canvas.height);
-const dst=ctx.createImageData(canvas.width,canvas.height);
+
+const src = ctx.getImageData(0,0,canvas.width,canvas.height);
+const dst = ctx.createImageData(canvas.width,canvas.height);
 
 for(let y=0;y<canvas.height;y++){
 for(let x=0;x<canvas.width;x++){
 let [sx,sy]=distortPixel(x,y,canvas.width,canvas.height);
-sx=Math.floor(sx);sy=Math.floor(sy);
+sx=Math.floor(sx);
+sy=Math.floor(sy);
 
 if(sx>=0&&sy>=0&&sx<canvas.width&&sy<canvas.height){
 let si=(sy*canvas.width+sx)*4;
@@ -142,84 +109,12 @@ ctx.putImageData(dst,0,0);
 
 function previewLoop(){
 if(!previewRunning)return;
-if(video.readyState>=2){
+
+if(video.readyState >= 2){
 renderFrame();
 }
+
 requestAnimationFrame(previewLoop);
-}
-
-function renderImage(){
-ctx.drawImage(sourceImage,0,0);
-const src=ctx.getImageData(0,0,canvas.width,canvas.height);
-const dst=ctx.createImageData(canvas.width,canvas.height);
-
-for(let y=0;y<canvas.height;y++){
-for(let x=0;x<canvas.width;x++){
-let [sx,sy]=distortPixel(x,y,canvas.width,canvas.height);
-sx=Math.floor(sx);sy=Math.floor(sy);
-
-if(sx>=0&&sy>=0&&sx<canvas.width&&sy<canvas.height){
-let si=(sy*canvas.width+sx)*4;
-let di=(y*canvas.width+x)*4;
-dst.data[di]=src.data[si];
-dst.data[di+1]=src.data[si+1];
-dst.data[di+2]=src.data[si+2];
-dst.data[di+3]=255;
-}
-}
-}
-ctx.putImageData(dst,0,0);
-}
-
-async function exportVideo(){
-if(!isVideo)return;
-
-const fps=30;
-statusText.textContent="Đang export 30 FPS thật...";
-bar.style.width="0%";
-
-video.pause();
-video.currentTime=0;
-
-const stream=canvas.captureStream(fps);
-const recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9'});
-
-let chunks=[];
-recorder.ondataavailable=e=>chunks.push(e.data);
-
-recorder.onstop=()=>{
-const blob=new Blob(chunks,{type:'video/webm'});
-const a=document.createElement('a');
-a.href=URL.createObjectURL(blob);
-a.download='fixed_video.webm';
-a.click();
-statusText.textContent="Export xong";
-};
-
-recorder.start();
-
-let duration=video.duration;
-let frameTime=1/fps;
-let currentTime=0;
-
-function processFrame(){
-if(currentTime>duration){
-recorder.stop();
-return;
-}
-
-video.currentTime=currentTime;
-
-video.onseeked=()=>{
-renderFrame();
-
-currentTime+=frameTime;
-bar.style.width=Math.min(100,(currentTime/duration)*100)+"%";
-
-setTimeout(processFrame,0);
-};
-}
-processFrame();
 }
 </script>
 </body>
