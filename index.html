@@ -82,62 +82,25 @@ else zoom=+(zoom+val).toFixed(4);
 sync(); draw();
 }
 
-function precision(delta,e){
-if(e.shiftKey) return delta*0.1;
-if(e.ctrlKey) return delta*0.02;
-return delta;
-}
-
-distortionSlider.oninput=e=>{
-let delta=e.target.value-distortion;
-distortion+=precision(delta,e);
-distortion=+distortion.toFixed(4);
-sync(); scheduleDraw();
-};
-
-zoomSlider.oninput=e=>{
-let delta=e.target.value-zoom;
-zoom+=precision(delta,e);
-zoom=+zoom.toFixed(4);
-sync(); scheduleDraw();
-};
-
+distortionSlider.oninput=()=>{distortion=parseFloat(distortionSlider.value);sync();draw();}
+zoomSlider.oninput=()=>{zoom=parseFloat(zoomSlider.value);sync();draw();}
 distortionNum.onchange=()=>{distortion=parseFloat(distortionNum.value);sync();draw();}
 zoomNum.onchange=()=>{zoom=parseFloat(zoomNum.value);sync();draw();}
 
 function savePreset(){
 localStorage.setItem("lensPreset",JSON.stringify({distortion,zoom}));
 }
-
 function loadPreset(){
 let p=JSON.parse(localStorage.getItem("lensPreset"));
 if(p){distortion=p.distortion;zoom=p.zoom;sync();draw();}
 }
 
-async function detectRealFPS(video, sampleFrames=60){
-return new Promise(resolve=>{
-let times=[];
-let count=0;
-
-function step(now,meta){
-times.push(meta.mediaTime);
-count++;
-
-if(count<sampleFrames){
-video.requestVideoFrameCallback(step);
-}else{
-let diffs=[];
-for(let i=1;i<times.length;i++){
-diffs.push(times[i]-times[i-1]);
-}
-let avg=diffs.reduce((a,b)=>a+b)/diffs.length;
-let fps=Math.round(1/avg);
-resolve(fps);
-}
-}
-
-video.requestVideoFrameCallback(step);
-});
+function getVideoFPS(video){
+let stream = video.captureStream();
+let track = stream.getVideoTracks()[0];
+let fps = track.getSettings().frameRate;
+if(!fps || fps < 20) fps = 30;
+return Math.round(fps);
 }
 
 document.getElementById("upload").onchange=e=>{
@@ -149,16 +112,12 @@ let url=URL.createObjectURL(file);
 
 if(isVideo){
 video.src=url;
-video.onloadedmetadata=async ()=>{
+video.onloadedmetadata=()=>{
 canvas.width=video.videoWidth;
 canvas.height=video.videoHeight;
 
-await video.play();
-originalFPS=await detectRealFPS(video);
+originalFPS = getVideoFPS(video);
 document.getElementById("fps").innerText=originalFPS;
-
-video.pause();
-video.currentTime=0;
 
 video.play();
 requestAnimationFrame(drawVideo);
@@ -226,12 +185,6 @@ dst.data[di+3]=255;
 ctx.putImageData(dst,0,0);
 }
 
-let drawTimeout;
-function scheduleDraw(){
-clearTimeout(drawTimeout);
-drawTimeout=setTimeout(draw,16);
-}
-
 function exportImage(){
 let link=document.createElement("a");
 link.download="fixed.png";
@@ -244,7 +197,7 @@ if(!isVideo) return;
 
 bar.style.width="0%";
 
-const stream=canvas.captureStream(originalFPS);
+const stream = canvas.captureStream(originalFPS);
 
 const recorder=new MediaRecorder(stream,{
 mimeType:"video/webm;codecs=vp9",
@@ -268,8 +221,8 @@ bar.style.width="100%";
 
 video.pause();
 video.currentTime=0;
-await video.play();
 
+await video.play();
 recorder.start();
 
 function render(){
