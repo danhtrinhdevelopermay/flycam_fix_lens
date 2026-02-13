@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>Lens Distortion Fix Tool</title>
 <style>
-body {font-family:sans-serif;background:#111;color:#eee;text-align:center}
+body{font-family:sans-serif;background:#111;color:#eee;text-align:center}
 canvas,video{max-width:95%;margin-top:10px;border-radius:10px}
 .controls{margin:10px}
 input[type=range]{width:300px}
@@ -15,11 +15,11 @@ button{padding:8px 16px;margin:5px;border-radius:8px;border:none;background:#0af
 </head>
 <body>
 
-<h2>Lens Distortion Fix (30 FPS thật)</h2>
+<h2>Lens Distortion Fix (Preview OK + Export 30FPS)</h2>
 
 <input type="file" id="fileInput" accept="image/*,video/*"><br>
 
-<video id="video" controls muted></video>
+<video id="video" muted playsinline style="display:none"></video>
 <canvas id="canvas"></canvas>
 
 <div class="controls">
@@ -52,108 +52,82 @@ const statusText = document.getElementById('status');
 
 let isVideo = false;
 let sourceImage = null;
+let previewRunning = false;
 
 function updateLabels(){
-k1v.textContent = k1.value;
-k2v.textContent = k2.value;
-scalev.textContent = scale.value;
+k1v.textContent=k1.value;
+k2v.textContent=k2.value;
+scalev.textContent=scale.value;
 }
 [k1,k2,scale].forEach(e=>e.oninput=updateLabels);
 updateLabels();
 
 function saveSettings(){
-localStorage.setItem('lensSettings', JSON.stringify({
-k1:k1.value, k2:k2.value, scale:scale.value
+localStorage.setItem('lensSettings',JSON.stringify({
+k1:k1.value,k2:k2.value,scale:scale.value
 }));
 alert("Đã lưu");
 }
 function loadSettings(){
-const s = JSON.parse(localStorage.getItem('lensSettings'));
+const s=JSON.parse(localStorage.getItem('lensSettings'));
 if(!s)return;
-k1.value=s.k1; k2.value=s.k2; scale.value=s.scale;
+k1.value=s.k1;k2.value=s.k2;scale.value=s.scale;
 updateLabels();
 }
 
-document.getElementById('fileInput').onchange = e=>{
-const file = e.target.files[0];
+document.getElementById('fileInput').onchange=e=>{
+const file=e.target.files[0];
 if(!file)return;
 
-isVideo = file.type.startsWith('video');
+isVideo=file.type.startsWith('video');
 
 if(isVideo){
-video.src = URL.createObjectURL(file);
-video.onloadedmetadata = ()=>{
-canvas.width = video.videoWidth;
-canvas.height = video.videoHeight;
+video.src=URL.createObjectURL(file);
+video.load();
+
+video.onloadedmetadata=()=>{
+canvas.width=video.videoWidth;
+canvas.height=video.videoHeight;
+
+video.currentTime=0;
 video.play();
-renderPreview();
+
+previewRunning=true;
+previewLoop();
 };
 }else{
-const img = new Image();
-img.onload = ()=>{
-canvas.width = img.width;
-canvas.height = img.height;
-sourceImage = img;
+const img=new Image();
+img.onload=()=>{
+canvas.width=img.width;
+canvas.height=img.height;
+sourceImage=img;
 renderImage();
 };
-img.src = URL.createObjectURL(file);
+img.src=URL.createObjectURL(file);
 }
 };
 
 function distortPixel(x,y,w,h){
-let nx = (x - w/2) / (w/2);
-let ny = (y - h/2) / (h/2);
-let r2 = nx*nx + ny*ny;
-
-let factor = 1 + k1.value*r2 + k2.value*r2*r2;
-nx *= factor * scale.value;
-ny *= factor * scale.value;
-
-let sx = nx*(w/2) + w/2;
-let sy = ny*(h/2) + h/2;
-return [sx, sy];
+let nx=(x-w/2)/(w/2);
+let ny=(y-h/2)/(h/2);
+let r2=nx*nx+ny*ny;
+let factor=1+k1.value*r2+k2.value*r2*r2;
+nx*=factor*scale.value;
+ny*=factor*scale.value;
+return [nx*(w/2)+w/2,ny*(h/2)+h/2];
 }
 
-function renderImage(){
-const w = canvas.width;
-const h = canvas.height;
-ctx.drawImage(sourceImage,0,0);
-
-const src = ctx.getImageData(0,0,w,h);
-const dst = ctx.createImageData(w,h);
-
-for(let y=0;y<h;y++){
-for(let x=0;x<w;x++){
-let [sx,sy]=distortPixel(x,y,w,h);
-sx = Math.floor(sx);
-sy = Math.floor(sy);
-
-if(sx>=0 && sy>=0 && sx<w && sy<h){
-let si = (sy*w+sx)*4;
-let di = (y*w+x)*4;
-dst.data[di]=src.data[si];
-dst.data[di+1]=src.data[si+1];
-dst.data[di+2]=src.data[si+2];
-dst.data[di+3]=255;
-}
-}
-}
-ctx.putImageData(dst,0,0);
-}
-
-function renderPreview(){
-if(!isVideo)return;
-
+function renderFrame(){
 ctx.drawImage(video,0,0);
-const src = ctx.getImageData(0,0,canvas.width,canvas.height);
-const dst = ctx.createImageData(canvas.width,canvas.height);
+const src=ctx.getImageData(0,0,canvas.width,canvas.height);
+const dst=ctx.createImageData(canvas.width,canvas.height);
 
 for(let y=0;y<canvas.height;y++){
 for(let x=0;x<canvas.width;x++){
 let [sx,sy]=distortPixel(x,y,canvas.width,canvas.height);
-sx=Math.floor(sx); sy=Math.floor(sy);
+sx=Math.floor(sx);sy=Math.floor(sy);
 
-if(sx>=0 && sy>=0 && sx<canvas.width && sy<canvas.height){
+if(sx>=0&&sy>=0&&sx<canvas.width&&sy<canvas.height){
 let si=(sy*canvas.width+sx)*4;
 let di=(y*canvas.width+x)*4;
 dst.data[di]=src.data[si];
@@ -164,22 +138,51 @@ dst.data[di+3]=255;
 }
 }
 ctx.putImageData(dst,0,0);
+}
 
-requestVideoFrameCallback(renderPreview);
+function previewLoop(){
+if(!previewRunning)return;
+if(video.readyState>=2){
+renderFrame();
+}
+requestAnimationFrame(previewLoop);
+}
+
+function renderImage(){
+ctx.drawImage(sourceImage,0,0);
+const src=ctx.getImageData(0,0,canvas.width,canvas.height);
+const dst=ctx.createImageData(canvas.width,canvas.height);
+
+for(let y=0;y<canvas.height;y++){
+for(let x=0;x<canvas.width;x++){
+let [sx,sy]=distortPixel(x,y,canvas.width,canvas.height);
+sx=Math.floor(sx);sy=Math.floor(sy);
+
+if(sx>=0&&sy>=0&&sx<canvas.width&&sy<canvas.height){
+let si=(sy*canvas.width+sx)*4;
+let di=(y*canvas.width+x)*4;
+dst.data[di]=src.data[si];
+dst.data[di+1]=src.data[si+1];
+dst.data[di+2]=src.data[si+2];
+dst.data[di+3]=255;
+}
+}
+}
+ctx.putImageData(dst,0,0);
 }
 
 async function exportVideo(){
 if(!isVideo)return;
 
-const fps = 30;
-statusText.textContent = "Đang export 30 FPS thật...";
+const fps=30;
+statusText.textContent="Đang export 30 FPS thật...";
 bar.style.width="0%";
 
 video.pause();
-video.currentTime = 0;
+video.currentTime=0;
 
-const stream = canvas.captureStream(fps);
-const recorder = new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9'});
+const stream=canvas.captureStream(fps);
+const recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp9'});
 
 let chunks=[];
 recorder.ondataavailable=e=>chunks.push(e.data);
@@ -195,45 +198,23 @@ statusText.textContent="Export xong";
 
 recorder.start();
 
-let duration = video.duration;
-let frameTime = 1/fps;
-let currentTime = 0;
+let duration=video.duration;
+let frameTime=1/fps;
+let currentTime=0;
 
 function processFrame(){
-if(currentTime > duration){
+if(currentTime>duration){
 recorder.stop();
 return;
 }
 
-video.currentTime = currentTime;
+video.currentTime=currentTime;
 
-video.onseeked = ()=>{
-ctx.drawImage(video,0,0);
+video.onseeked=()=>{
+renderFrame();
 
-const src = ctx.getImageData(0,0,canvas.width,canvas.height);
-const dst = ctx.createImageData(canvas.width,canvas.height);
-
-for(let y=0;y<canvas.height;y++){
-for(let x=0;x<canvas.width;x++){
-let [sx,sy]=distortPixel(x,y,canvas.width,canvas.height);
-sx=Math.floor(sx); sy=Math.floor(sy);
-
-if(sx>=0 && sy>=0 && sx<canvas.width && sy<canvas.height){
-let si=(sy*canvas.width+sx)*4;
-let di=(y*canvas.width+x)*4;
-dst.data[di]=src.data[si];
-dst.data[di+1]=src.data[si+1];
-dst.data[di+2]=src.data[si+2];
-dst.data[di+3]=255;
-}
-}
-}
-
-ctx.putImageData(dst,0,0);
-
-currentTime += frameTime;
-
-bar.style.width = Math.min(100,(currentTime/duration)*100) + "%";
+currentTime+=frameTime;
+bar.style.width=Math.min(100,(currentTime/duration)*100)+"%";
 
 setTimeout(processFrame,0);
 };
